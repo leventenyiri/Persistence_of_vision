@@ -340,17 +340,17 @@ int calculateDelay(int speed) {
     return delayTime; // The delay decreases as the speed increases
 }
 
-void Display_char(uint16_t *ASCII, int32_t x){
+void Display_char(uint16_t (*ASCII)[9], int32_t x){
 
 
 	HAL_Delay(50);
 
 
 	//if we move it to the right read the array from 0->9
-	if (x < -200 && dir_change.flag == 1) {
+	if (x > 200 && dir_change.flag == 1) {
 		for (int a = 0; a < 5; a++) {
 			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(ASCII[i], red);
+				CombineAndSendNEW(ASCII[a][i], red);
 				HAL_Delay(0.05);
 			}
 		}
@@ -359,10 +359,10 @@ void Display_char(uint16_t *ASCII, int32_t x){
 	}
 
 	//if we move it to the left read the array backwards
-	else if (x > 200 && dir_change.flag == 0) {
+	else if (x < -200 && dir_change.flag == 0) {
 		for (int b = 0; b < 5; b++) {
 			for (int j = 8; j >= 0; j--) {
-				CombineAndSendNEW(ASCII[j], red);
+				CombineAndSendNEW(ASCII[b][j], red);
 				HAL_Delay(0.05);
 			}
 		}
@@ -423,6 +423,25 @@ int main(void)
 
 
   dir_change.flag =1; //using a flag to detect the change of direction
+
+
+  uint16_t ASCII_ARRAY[5][9];
+
+	for (int i = 0; i < 5; i++) {
+		for (int j = 0; j < 9; j++) {
+
+			if (i = 0)
+				ASCII_ARRAY[i][j] = E[j];
+			if (i = 1)
+				ASCII_ARRAY[i][j] = R[j];
+			if (i = 2)
+				ASCII_ARRAY[i][j] = I[j];
+			if (i = 3)
+				ASCII_ARRAY[i][j] = K[j];
+			if (i = 4)
+				ASCII_ARRAY[i][j] = A[j];
+		}
+	}
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -440,10 +459,9 @@ int main(void)
 
 		//delayTime = calculateDelay((int) acc_axes.x);
 
-		uint16_t ASCII_ARRAY[5][9] = {A,A,A,A,A};
 
 		int halo = acc_axes.x;
-		Display_char(A, acc_axes.x);
+		Display_char(ASCII_ARRAY, acc_axes.x);
 		HAL_Delay(1);
 
 
