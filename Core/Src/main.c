@@ -348,7 +348,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 
 	//if we move it to the right read the array from 0->9
 	if (x > 200 && dir_change.flag == 1) {
-		for (int a = 0; a < 5; a++) {
+		for (int a = 0; a < 7; a++) {
 			for (int i = 0; i < 9; i++) {
 				CombineAndSendNEW(ASCII[a][i], red);
 				HAL_Delay(0.05);
@@ -360,7 +360,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 
 	//if we move it to the left read the array backwards
 	else if (x < -200 && dir_change.flag == 0) {
-		for (int b = 0; b < 5; b++) {
+		for (int b = 0; b < 7; b++) {
 			for (int j = 8; j >= 0; j--) {
 				CombineAndSendNEW(ASCII[b][j], red);
 				HAL_Delay(0.05);
@@ -425,21 +425,25 @@ int main(void)
   dir_change.flag =1; //using a flag to detect the change of direction
 
 
-  uint16_t ASCII_ARRAY[5][9];
+  uint16_t ASCII_ARRAY[7][9];
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 7; i++) {
 		for (int j = 0; j < 9; j++) {
 
 			if (i = 0)
-				ASCII_ARRAY[i][j] = E[j];
+				ASCII_ARRAY[i][j] = BLANK[j];
 			if (i = 1)
-				ASCII_ARRAY[i][j] = R[j];
+				ASCII_ARRAY[i][j] = E[j];
 			if (i = 2)
-				ASCII_ARRAY[i][j] = I[j];
+				ASCII_ARRAY[i][j] = R[j];
 			if (i = 3)
-				ASCII_ARRAY[i][j] = K[j];
+				ASCII_ARRAY[i][j] = I[j];
 			if (i = 4)
+				ASCII_ARRAY[i][j] = K[j];
+			if (i = 5)
 				ASCII_ARRAY[i][j] = A[j];
+			if (i = 6)
+				ASCII_ARRAY[i][j] = BLANK[j];
 		}
 	}
   /* USER CODE END 2 */

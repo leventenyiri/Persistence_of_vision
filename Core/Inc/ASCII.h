@@ -8,6 +8,8 @@
 #ifndef INC_ASCII_H_
 #define INC_ASCII_H_
 
+uint16_t BLANK[9] = {0};
+
 uint16_t A[9] = { 0x1FFF, 0x2080, 0x4080, 0x8080, 0x8080, 0x8080, 0x4080,
 		0x2080, 0x1FFF
 };
