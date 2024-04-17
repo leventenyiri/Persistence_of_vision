@@ -351,7 +351,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 		for (int a = 0; a < 7; a++) {
 			for (int i = 0; i < 9; i++) {
 				CombineAndSendNEW(ASCII[a][i], red);
-				HAL_Delay(0.05);
+				HAL_Delay(0.005);
 			}
 		}
 
@@ -363,7 +363,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 		for (int b = 0; b < 7; b++) {
 			for (int j = 8; j >= 0; j--) {
 				CombineAndSendNEW(ASCII[b][j], red);
-				HAL_Delay(0.05);
+				HAL_Delay(0.005);
 			}
 		}
 
@@ -466,7 +466,7 @@ int main(void)
 
 		int halo = acc_axes.x;
 		Display_char(ASCII_ARRAY, acc_axes.x);
-		HAL_Delay(1);
+		HAL_Delay(0.2);
 
 
 

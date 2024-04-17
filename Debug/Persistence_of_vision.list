@@ -994,7 +994,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
  800097a:	2105      	movs	r1, #5
  800097c:	4618      	mov	r0, r3
  800097e:	f7ff fe85 	bl	800068c <CombineAndSendNEW>
-				HAL_Delay(0.05);
+				HAL_Delay(0.005);
  8000982:	2000      	movs	r0, #0
  8000984:	f001 fe88 	bl	8002698 <HAL_Delay>
 			for (int i = 0; i < 9; i++) {
@@ -1064,7 +1064,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
  80009f4:	2105      	movs	r1, #5
  80009f6:	4618      	mov	r0, r3
  80009f8:	f7ff fe48 	bl	800068c <CombineAndSendNEW>
-				HAL_Delay(0.05);
+				HAL_Delay(0.005);
  80009fc:	2000      	movs	r0, #0
  80009fe:	f001 fe4b 	bl	8002698 <HAL_Delay>
 			for (int j = 8; j >= 0; j--) {
@@ -1343,8 +1343,8 @@ int main(void)
  8000c16:	4611      	mov	r1, r2
  8000c18:	4618      	mov	r0, r3
  8000c1a:	f7ff fe8b 	bl	8000934 <Display_char>
-		HAL_Delay(1);
- 8000c1e:	2001      	movs	r0, #1
+		HAL_Delay(0.2);
+ 8000c1e:	2000      	movs	r0, #0
  8000c20:	f001 fd3a 	bl	8002698 <HAL_Delay>
   {
  8000c24:	bf00      	nop
