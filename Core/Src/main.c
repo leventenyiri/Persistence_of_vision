@@ -327,6 +327,12 @@ int32_t wrap_platform_write(uint8_t Address, uint8_t Reg, uint8_t *Bufp,
 	return 0;
 }
 
+int calculateDelay(int speed) {
+
+    int delayTime = 500 / (abs(speed)/100+1);  // Avoid division by zero by ensuring speed is never zero in the caller
+    return delayTime; // The delay decreases as the speed increases
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -367,6 +373,9 @@ int main(void)
   OutputEnable();
 
   MEMS_Init();
+
+  LSM6DSL_Axes_t acc_axes;
+  int delayTime;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -374,29 +383,49 @@ int main(void)
   while (1)
   {
 
-		LSM6DSL_Axes_t acc_axes;
+
 		LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
+
 		//printf("% 5d, % 5d, % 5d\r\n", (int) acc_axes.x, (int) acc_axes.y,
-			//	(int) acc_axes.z);
+		//	(int) acc_axes.z);
 
-		CombineAndSendNEW(0b1111111111111111,red);
-	  if( ((int) acc_axes.x) > 500){
+		//delayTime = calculateDelay((int) acc_axes.x);
 
+		if (abs(acc_axes.x) > 500) {
 			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i],red);
-				HAL_Delay(5);
+				CombineAndSendNEW(A[i], red);
+				HAL_Delay(0.05);
 			}
 
-	  }
-
-	  else if( ((int) acc_axes.x) < -500){
+			HAL_Delay(0.5);
 
 			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i],red);
-				HAL_Delay(5);
+				CombineAndSendNEW(A[i], red);
+				HAL_Delay(0.05);
+			}
+			HAL_Delay(0.5);
+
+			for (int i = 0; i < 9; i++) {
+				CombineAndSendNEW(A[i], red);
+				HAL_Delay(0.05);
+			}
+			HAL_Delay(0.5);
+
+			for (int i = 0; i < 9; i++) {
+				CombineAndSendNEW(A[i], red);
+				HAL_Delay(0.05);
+			}
+			HAL_Delay(0.5);
+
+			for (int i = 0; i < 9; i++) {
+				CombineAndSendNEW(A[i], red);
+				HAL_Delay(0.05);
 			}
 
-	  }
+			HAL_Delay(0.5);
+		}
+
+
 
     /* USER CODE END WHILE */
 
