@@ -50,9 +50,16 @@ SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart2;
 
+
+
 /* USER CODE BEGIN PV */
 LSM6DSL_Object_t MotionSensor;
 volatile uint32_t dataRdyIntReceived;
+
+typedef struct {
+    unsigned int flag:1;  // This defines a 1-bit unsigned integer
+} BitField;
+BitField dir_change;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -333,6 +340,42 @@ int calculateDelay(int speed) {
     return delayTime; // The delay decreases as the speed increases
 }
 
+void Display_char(uint16_t *ASCII, int32_t x){
+
+
+	HAL_Delay(50);
+
+
+	//if we move it to the right read the array from 0->9
+	if (x < -200 && dir_change.flag == 1) {
+		for (int a = 0; a < 5; a++) {
+			for (int i = 0; i < 9; i++) {
+				CombineAndSendNEW(ASCII[i], red);
+				HAL_Delay(0.05);
+			}
+		}
+
+		dir_change.flag ^= 1;
+	}
+
+	//if we move it to the left read the array backwards
+	else if (x > 200 && dir_change.flag == 0) {
+		for (int b = 0; b < 5; b++) {
+			for (int j = 8; j >= 0; j--) {
+				CombineAndSendNEW(ASCII[j], red);
+				HAL_Delay(0.05);
+			}
+		}
+
+		dir_change.flag ^= 1;
+	}
+
+
+
+
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -376,6 +419,10 @@ int main(void)
 
   LSM6DSL_Axes_t acc_axes;
   int delayTime;
+
+
+
+  dir_change.flag =1; //using a flag to detect the change of direction
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -384,46 +431,24 @@ int main(void)
   {
 
 
+
+
 		LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
 
-		//printf("% 5d, % 5d, % 5d\r\n", (int) acc_axes.x, (int) acc_axes.y,
-		//	(int) acc_axes.z);
+		printf("% 5d, % 5d, % 5d\r\n", (int) acc_axes.x, (int) acc_axes.y,
+			(int) acc_axes.z);
 
 		//delayTime = calculateDelay((int) acc_axes.x);
 
-		if (abs(acc_axes.x) > 500) {
-			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i], red);
-				HAL_Delay(0.05);
-			}
+		uint16_t ASCII_ARRAY[5][9] = {A,A,A,A,A};
 
-			HAL_Delay(0.5);
+		int halo = acc_axes.x;
+		Display_char(A, acc_axes.x);
+		HAL_Delay(1);
 
-			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i], red);
-				HAL_Delay(0.05);
-			}
-			HAL_Delay(0.5);
 
-			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i], red);
-				HAL_Delay(0.05);
-			}
-			HAL_Delay(0.5);
 
-			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i], red);
-				HAL_Delay(0.05);
-			}
-			HAL_Delay(0.5);
 
-			for (int i = 0; i < 9; i++) {
-				CombineAndSendNEW(A[i], red);
-				HAL_Delay(0.05);
-			}
-
-			HAL_Delay(0.5);
-		}
 
 
 
