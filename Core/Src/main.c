@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include "stm32f4xx_nucleo_bus.h"
 #include "ASCII.h"
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,9 +49,9 @@
 /* Private variables ---------------------------------------------------------*/
 SPI_HandleTypeDef hspi2;
 
+TIM_HandleTypeDef htim2;
+
 UART_HandleTypeDef huart2;
-
-
 
 /* USER CODE BEGIN PV */
 LSM6DSL_Object_t MotionSensor;
@@ -60,6 +61,56 @@ typedef struct {
     unsigned int flag:1;  // This defines a 1-bit unsigned integer
 } BitField;
 BitField dir_change;
+
+#define TRUE 1
+#define FALSE 0
+
+volatile BitField timer_flag;
+
+volatile BitField permissionToWrite;
+
+volatile LSM6DSL_Axes_t acc_axes;
+
+volatile int cnt = 0;
+
+volatile int iterator = 0;
+
+
+
+typedef struct {
+    double acc_axes_x;
+    int cnt;
+} Data;
+
+
+#define BUFFER_SIZE 100
+#define WINDOW_SIZE 5
+volatile Data buffer1[BUFFER_SIZE];
+volatile Data buffer2[BUFFER_SIZE];
+volatile Data processedBuffer1[BUFFER_SIZE];
+volatile Data processedBuffer2[BUFFER_SIZE];
+volatile int buffer_index = 0;
+volatile int procBuffer_index = 0;
+
+volatile Data *writeBuffer = buffer1;
+volatile Data *readBuffer = buffer2;
+volatile Data *procWriteBuffer = processedBuffer1;
+volatile Data *procReadBuffer = processedBuffer2;
+
+volatile BitField isBufferSwitched;
+volatile BitField isProcBufferSwitched;
+
+volatile double movAvgSum = 0; // Sum for moving average calculation
+volatile double window[WINDOW_SIZE] = {0};
+volatile int window_index = 0;
+
+volatile uint8_t num_data_in_window = 0;
+
+//Meanhez:
+
+volatile double runningTotal = 0;
+volatile int count = 0;
+volatile double currentMean = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -67,12 +118,15 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 static void MEMS_Init(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+
 
 
 
@@ -369,12 +423,99 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 
 		dir_change.flag ^= 1;
 	}
+}
+
+// Update mean and center data dynamically
+double updateMeanAndCenterData(double newData) {
+    runningTotal += newData;
+    count++;
+    currentMean = runningTotal / count;
+    return newData - currentMean;
+}
+
+//Center + moving average
+void process_sensor_data(Data *readBuffer) {
+
+	//For the first "WINDOW_SIZE" iterations old_value will be 0, then it will always be the
+	//oldest value, this way i can calculate a moving average dynamically
+	//Centering it before applying moving average
+	double centeredData = updateMeanAndCenterData(readBuffer[buffer_index].acc_axes_x);
+
+	//Pass old data, then override that index with new data
+    int old_value = window[window_index];
+    window[window_index] = centeredData;
+
+    // Update sum for moving average
+    movAvgSum -= old_value;
+    movAvgSum += centeredData;
 
 
+    if (num_data_in_window < WINDOW_SIZE) {
+		num_data_in_window++;  // Only needed for the first few iterations, after that it
+		//will become WINDOW_SIZE
+	}
 
+    // Move window index forward
+    window_index = (window_index + 1) % WINDOW_SIZE;
+
+    // Calculate moving average
+
+    double moving_average = movAvgSum / (double) num_data_in_window;
+
+    if (procBuffer_index >= BUFFER_SIZE) {
+		switchBuffers(&procWriteBuffer,&procReadBuffer,processedBuffer1,processedBuffer2); // Switch the buffers
+		procBuffer_index = 0; // Reset buffer index for new writing
+		isProcBufferSwitched.flag = TRUE; // Set the flag indicating buffer switch
+	}
+
+    //printf("Raw Data: %f, Moving Average: %f\n\r", centeredData, moving_average);
+    procWriteBuffer[procBuffer_index].acc_axes_x = moving_average;
+
+
+   // printf("%f", procWriteBuffer[procBuffer_index]);
+
+    procBuffer_index++;
 
 
 }
+
+void switchBuffers(Data** writeBuffer, Data** readBuffer, Data* buffer1, Data* buffer2) {
+    if (*writeBuffer == buffer1) {
+        *writeBuffer = buffer2;
+        *readBuffer = buffer1;
+    } else {
+        *writeBuffer = buffer1;
+        *readBuffer = buffer2;
+    }
+
+}
+
+
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+	if (htim->Instance == TIM2) {
+		LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
+
+		// Check if buffer is ready to switch
+		if (buffer_index >= BUFFER_SIZE) {
+			switchBuffers(&writeBuffer,&readBuffer,buffer1,buffer2); // Switch the buffers
+			buffer_index = 0; // Reset buffer index for new writing
+			isBufferSwitched.flag = TRUE; // Set the flag indicating buffer switch
+		}
+
+		// Write data to the active buffer
+		writeBuffer[buffer_index].acc_axes_x = updateMeanAndCenterData((int) acc_axes.x);
+		writeBuffer[buffer_index].cnt = cnt;
+		buffer_index++;
+		cnt++;
+
+
+
+		timer_flag.flag = TRUE;
+	}
+}
+
+
 
 /* USER CODE END 0 */
 
@@ -386,8 +527,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
-
+	isBufferSwitched.flag = FALSE;
+	isProcBufferSwitched.flag = FALSE;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -410,6 +551,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_SPI2_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   OutputDisable();  // Disable outputs during initialization
   SendLEDData(LED_CLEAR);
@@ -417,8 +559,12 @@ int main(void)
 
   MEMS_Init();
 
-  LSM6DSL_Axes_t acc_axes;
+
   int delayTime;
+
+  timer_flag.flag = 0;
+
+  HAL_TIM_Base_Start_IT(&htim2);
 
 
 
@@ -430,22 +576,25 @@ int main(void)
 	for (int i = 0; i < 7; i++) {
 		for (int j = 0; j < 9; j++) {
 
-			if (i = 0)
+			if (i == 0)
 				ASCII_ARRAY[i][j] = BLANK[j];
-			if (i = 1)
+			if (i == 1)
 				ASCII_ARRAY[i][j] = E[j];
-			if (i = 2)
+			if (i == 2)
 				ASCII_ARRAY[i][j] = R[j];
-			if (i = 3)
+			if (i == 3)
 				ASCII_ARRAY[i][j] = I[j];
-			if (i = 4)
+			if (i == 4)
 				ASCII_ARRAY[i][j] = K[j];
-			if (i = 5)
+			if (i == 5)
 				ASCII_ARRAY[i][j] = A[j];
-			if (i = 6)
+			if (i == 6)
 				ASCII_ARRAY[i][j] = BLANK[j];
 		}
 	}
+
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -455,22 +604,16 @@ int main(void)
 
 
 
+	  //Every 0.5ms write out the x axis value
+		if (timer_flag.flag == TRUE) {
 
-		LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
-
-		printf("% 5d, % 5d, % 5d\r\n", (int) acc_axes.x, (int) acc_axes.y,
-			(int) acc_axes.z);
-
-		//delayTime = calculateDelay((int) acc_axes.x);
-
-
-		int halo = acc_axes.x;
-		Display_char(ASCII_ARRAY, acc_axes.x);
-		HAL_Delay(0.2);
+			for (int i = 0; i < BUFFER_SIZE; i++) {
+				printf("%f %d\r\n", readBuffer[i].acc_axes_x, readBuffer[i].cnt);
+			}
 
 
-
-
+			timer_flag.flag = FALSE;
+		}
 
 
 
@@ -519,7 +662,7 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV8;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
@@ -563,6 +706,51 @@ static void MX_SPI2_Init(void)
   /* USER CODE BEGIN SPI2_Init 2 */
 
   /* USER CODE END SPI2_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 1050-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 9;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -662,6 +850,7 @@ static void MEMS_Init(void)
   LSM6DSL_IO_t io_ctx;
   uint8_t id ;
   LSM6DSL_AxesRaw_t axes;
+  float odr;
 
   /* Link I2C functions to the LSM6DSL driver */
 	io_ctx.BusType = LSM6DSL_SPI_4WIRES_BUS;
@@ -683,13 +872,17 @@ static void MEMS_Init(void)
   LSM6DSL_Init(&MotionSensor);
 
   /* Configure the LSM6DSL accelerometer (ODR, scale and interrupt) */
-  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 26.0f); /* 26 Hz */
-  LSM6DSL_ACC_SetFullScale(&MotionSensor, 4);          /* [-4000mg; +4000mg] */
+  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 3330.0f); /* 26 Hz */
+  LSM6DSL_ACC_SetFullScale(&MotionSensor, 8);          /* [-4000mg; +4000mg]  old*/
   LSM6DSL_ACC_Set_INT1_DRDY(&MotionSensor, ENABLE);    /* Enable DRDY */
   LSM6DSL_ACC_GetAxesRaw(&MotionSensor, &axes);        /* Clear DRDY */
 
+
+
   /* Start the LSM6DSL accelerometer */
   LSM6DSL_ACC_Enable(&MotionSensor);
+
+  LSM6DSL_ACC_GetOutputDataRate(&MotionSensor, &odr);
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
