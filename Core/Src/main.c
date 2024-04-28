@@ -69,6 +69,8 @@ volatile BitField timer_flag;
 
 volatile BitField permissionToWrite;
 
+BitField period;
+
 volatile LSM6DSL_Axes_t acc_axes;
 
 volatile int cnt = 0;
@@ -123,6 +125,11 @@ double centered_velocity = 0;
 double runningTotalVelocity = 0.0;
 uint8_t zeroCrossing = 0;
 double filtered_velocity = 0;
+
+double periodTime = 0;
+double realPeriodTime = 0;
+double startPeriod = 0;
+double endPeriod = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -535,7 +542,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	}
 }
 
-void update_motion(double new_acceleration, double delta_t) {
+void update_motion(double new_acceleration, double new_time, double delta_t) {
     static double velocity_buffer[WINDOW_SIZE] = {0};
     static int buffer_index = 0;
     static int samples_collected = 0;
@@ -588,6 +595,24 @@ void update_motion(double new_acceleration, double delta_t) {
         current_displacement = 0;
         zeroCrossing = 0;
     }
+
+    if(current_displacement > 3000){
+    	period.flag = TRUE;
+    }
+
+	if (period.flag && (current_displacement == 0)) {
+
+		periodTime = new_time- startPeriod;
+		startPeriod = new_time;
+		period.flag = FALSE;
+
+		if(periodTime > 0){
+			realPeriodTime = periodTime;
+		}
+
+		printf("startPeriod: %f periodTime: %f\r\n",startPeriod, realPeriodTime);
+	}
+
 }
 
 
@@ -604,6 +629,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 	isBufferSwitched.flag = FALSE;
 	isProcBufferSwitched.flag = FALSE;
+	period.flag = FALSE;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -685,8 +711,10 @@ int main(void)
 
 
 			for (int i = 0; i < BUFFER_SIZE; i++) {
-				update_motion(readBuffer[i].acc_axes_x,1);
-				printf("%f %f %f %d\r\n", readBuffer[i].acc_axes_x, centered_velocity, current_displacement, readBuffer[i].cnt);
+
+
+				update_motion(readBuffer[i].acc_axes_x, readBuffer[i].cnt,1);
+				//printf("%f %f %f %d\r\n", readBuffer[i].acc_axes_x, centered_velocity, current_displacement, readBuffer[i].cnt);
 			}
 
 
