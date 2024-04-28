@@ -106,11 +106,23 @@ volatile int window_index = 0;
 
 volatile uint8_t num_data_in_window = 0;
 
+uint8_t velocity_cnt = 0;
+
 //Meanhez:
 
 volatile double runningTotal = 0;
 volatile int count = 0;
 volatile double currentMean = 0;
+
+double last_acceleration = 0.0;
+double last_velocity = 0.0;
+double current_velocity = 0.0;
+double current_displacement = 0.0;
+double centered_velocity = 0;
+
+double runningTotalVelocity = 0.0;
+uint8_t zeroCrossing = 0;
+double filtered_velocity = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -433,6 +445,13 @@ double updateMeanAndCenterData(double newData) {
     return newData - currentMean;
 }
 
+double centerVelocity(double newData) {
+    runningTotal += newData;
+    count++;
+    currentMean = runningTotal / count;
+    return newData - currentMean;
+}
+
 //Center + moving average
 void process_sensor_data(Data *readBuffer) {
 
@@ -492,6 +511,7 @@ void switchBuffers(Data** writeBuffer, Data** readBuffer, Data* buffer1, Data* b
 
 
 
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == TIM2) {
 		LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
@@ -513,6 +533,53 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
 		timer_flag.flag = TRUE;
 	}
+}
+
+void update_motion(double new_acceleration, double delta_t) {
+    // Constants
+    const double alpha = 0.5;  // Smoothing factor. Closer to 1 makes it more responsive but less smooth.
+
+    // Compute average acceleration
+    double average_acceleration = (last_acceleration + new_acceleration) / 2.0;
+    current_velocity += average_acceleration * delta_t;
+
+    // Apply low-pass filter to smooth the velocity
+    if (velocity_cnt == 0) {
+        // Initialize the filtered_velocity with the first sample
+        filtered_velocity = current_velocity;
+    } else {
+        // Apply the exponential moving average
+        filtered_velocity = alpha * current_velocity + (1 - alpha) * filtered_velocity;
+    }
+
+    // Update the running total and count for velocity
+    runningTotalVelocity += filtered_velocity;
+    velocity_cnt++;
+
+    // Calculate the mean of the velocities
+    double mean_velocity = runningTotalVelocity / velocity_cnt;
+
+    // Center the current velocity
+    centered_velocity = filtered_velocity - mean_velocity;
+
+    double average_velocity = (last_velocity + centered_velocity) / 2.0;
+    double abs_velocity = (fabs(last_velocity) + fabs(centered_velocity)) / 2.0;
+    current_displacement += abs_velocity * delta_t;
+
+    if ((last_velocity > 0 && centered_velocity < 0) || (last_velocity < 0 && centered_velocity > 0)) {
+        zeroCrossing++;
+    }
+
+    // Update last values for the next iteration
+    last_acceleration = new_acceleration;
+    last_velocity = centered_velocity;
+
+    // Reset displacement after two zero crossings
+    if (zeroCrossing == 2) {
+        current_displacement = 0;
+        zeroCrossing = 0;
+        //printf("Current_displacement: %f \r\n", current_displacement);
+    }
 }
 
 
@@ -607,8 +674,11 @@ int main(void)
 	  //Every 0.5ms write out the x axis value
 		if (timer_flag.flag == TRUE) {
 
+
+
 			for (int i = 0; i < BUFFER_SIZE; i++) {
-				printf("%f %d\r\n", readBuffer[i].acc_axes_x, readBuffer[i].cnt);
+				update_motion(readBuffer[i].acc_axes_x,1);
+				printf("%f %f %f %d\r\n", readBuffer[i].acc_axes_x, centered_velocity, current_displacement, readBuffer[i].cnt);
 			}
 
 
