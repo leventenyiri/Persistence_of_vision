@@ -84,7 +84,7 @@ typedef struct {
 
 
 #define BUFFER_SIZE 100
-#define WINDOW_SIZE 5
+#define WINDOW_SIZE 10
 volatile Data buffer1[BUFFER_SIZE];
 volatile Data buffer2[BUFFER_SIZE];
 volatile Data processedBuffer1[BUFFER_SIZE];
@@ -536,32 +536,42 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 }
 
 void update_motion(double new_acceleration, double delta_t) {
+    static double velocity_buffer[WINDOW_SIZE] = {0};
+    static int buffer_index = 0;
+    static int samples_collected = 0;
+
     // Constants
-    const double alpha = 0.5;  // Smoothing factor. Closer to 1 makes it more responsive but less smooth.
+    const double alpha = 0.3;  // Adjust alpha for testing different responsiveness
 
     // Compute average acceleration
     double average_acceleration = (last_acceleration + new_acceleration) / 2.0;
     current_velocity += average_acceleration * delta_t;
 
     // Apply low-pass filter to smooth the velocity
-    if (velocity_cnt == 0) {
-        // Initialize the filtered_velocity with the first sample
+    if (samples_collected == 0) {
         filtered_velocity = current_velocity;
     } else {
-        // Apply the exponential moving average
         filtered_velocity = alpha * current_velocity + (1 - alpha) * filtered_velocity;
     }
 
-    // Update the running total and count for velocity
-    runningTotalVelocity += filtered_velocity;
-    velocity_cnt++;
+    // Store filtered velocity in the buffer
+    velocity_buffer[buffer_index] = filtered_velocity;
+    buffer_index = (buffer_index + 1) % WINDOW_SIZE;
 
-    // Calculate the mean of the velocities
-    double mean_velocity = runningTotalVelocity / velocity_cnt;
+    // Update total sample count only until buffer is first filled
+    if (samples_collected < WINDOW_SIZE) samples_collected++;
+
+    // Calculate the mean of the velocities in the buffer
+    double mean_velocity = 0;
+    for (int i = 0; i < samples_collected; i++) {
+        mean_velocity += velocity_buffer[i];
+    }
+    mean_velocity /= samples_collected;
 
     // Center the current velocity
     centered_velocity = filtered_velocity - mean_velocity;
 
+    // Rest of the computation
     double average_velocity = (last_velocity + centered_velocity) / 2.0;
     double abs_velocity = (fabs(last_velocity) + fabs(centered_velocity)) / 2.0;
     current_displacement += abs_velocity * delta_t;
@@ -570,15 +580,13 @@ void update_motion(double new_acceleration, double delta_t) {
         zeroCrossing++;
     }
 
-    // Update last values for the next iteration
+    // Update last values
     last_acceleration = new_acceleration;
     last_velocity = centered_velocity;
 
-    // Reset displacement after two zero crossings
     if (zeroCrossing == 2) {
         current_displacement = 0;
         zeroCrossing = 0;
-        //printf("Current_displacement: %f \r\n", current_displacement);
     }
 }
 
