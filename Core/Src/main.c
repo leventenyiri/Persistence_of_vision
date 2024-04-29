@@ -511,64 +511,53 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
     static int buffer_index = 0;
     static int samples_collected = 0;
 
+    const double alpha = 0.98;  // Smoothing factor for velocity low-pass filter
+    const double beta = 0.02;   // Smoothing factor for baseline estimation
 
-    const double alpha = 1;  // Closer to 1-> faster, closer to 0-> smoother
-
+    static double baseline = 0; // Baseline estimation for velocity
 
     double average_acceleration = (last_acceleration + new_acceleration) / 2.0;
     current_velocity += average_acceleration * delta_t;
 
-    velocity_buffer[buffer_index] = current_velocity;
+    // Low-pass filter to smooth the velocity
+    if (samples_collected == 0) {
+        filtered_velocity = current_velocity;
+    } else {
+        filtered_velocity = alpha * current_velocity + (1 - alpha) * filtered_velocity;
+    }
+
+    // Estimate and update the baseline using a slower EMA
+    baseline = beta * filtered_velocity + (1 - beta) * baseline;
+
+    // Center the velocity by subtracting the estimated baseline
+    centered_velocity = filtered_velocity - baseline;
+
+    // Store the centered velocity in the buffer for analysis or other use
+    velocity_buffer[buffer_index] = centered_velocity;
     buffer_index = (buffer_index + 1) % WINDOW_SIZE;
 
-    // Update total sample count only until buffer is first filled
-    if (samples_collected < WINDOW_SIZE) samples_collected++;
-
-    // Calculate the mean of the velocities in the buffer
-    double mean_velocity = 0;
-    for (int i = 0; i < samples_collected; i++) {
-        mean_velocity += velocity_buffer[i];
+    if (samples_collected < WINDOW_SIZE) {
+        samples_collected++;
     }
-    mean_velocity /= samples_collected;
 
-    // Center the current velocity
-    centered_velocity = current_velocity - mean_velocity;
-
-    // Rest of the computation
+    // Additional computations
     double average_velocity = (last_velocity + centered_velocity) / 2.0;
     double abs_velocity = (fabs(last_velocity) + fabs(centered_velocity)) / 2.0;
     current_displacement += abs_velocity * delta_t;
 
+    // Check for zero crossings
     if ((last_velocity > 0 && centered_velocity < 0) || (last_velocity < 0 && centered_velocity > 0)) {
         zeroCrossing++;
     }
-
-    // Update last values
-    last_acceleration = new_acceleration;
-    last_velocity = centered_velocity;
 
     if (zeroCrossing == 2) {
         current_displacement = 0;
         zeroCrossing = 0;
     }
 
-    if(current_displacement > 3000){
-    	period.flag = TRUE;
-    }
-
-	if (period.flag && (current_displacement == 0)) {
-
-		periodTime = new_time- startPeriod;
-		startPeriod = new_time;
-		period.flag = FALSE;
-
-		if(periodTime > 0){
-			realPeriodTime = periodTime;
-		}
-
-		//printf("startPeriod: %f periodTime: %f\r\n",startPeriod, realPeriodTime);
-	}
-
+    // Update last values for next iteration
+    last_acceleration = new_acceleration;
+    last_velocity = centered_velocity;
 }
 
 
@@ -673,11 +662,11 @@ int main(void)
 
 		//Display(A,acc_axes.x);
 
-    /* USER CODE END WHILE */
+		/* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+		/* USER CODE BEGIN 3 */
 	}
-  /* USER CODE END 3 */
+	/* USER CODE END 3 */
 }
 
 /**
