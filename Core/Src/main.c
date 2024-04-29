@@ -85,22 +85,11 @@ typedef struct {
 } Data;
 
 
-#define BUFFER_SIZE 100
+#define BUFFER_SIZE 3000
 #define WINDOW_SIZE 10
-volatile Data buffer1[BUFFER_SIZE];
-volatile Data buffer2[BUFFER_SIZE];
-volatile Data processedBuffer1[BUFFER_SIZE];
-volatile Data processedBuffer2[BUFFER_SIZE];
-volatile int buffer_index = 0;
-volatile int procBuffer_index = 0;
-
-volatile Data *writeBuffer = buffer1;
-volatile Data *readBuffer = buffer2;
-volatile Data *procWriteBuffer = processedBuffer1;
-volatile Data *procReadBuffer = processedBuffer2;
-
-volatile BitField isBufferSwitched;
-volatile BitField isProcBufferSwitched;
+volatile Data Buffer[BUFFER_SIZE];
+volatile int read_idx = 0;
+volatile int write_idx = 0;
 
 volatile double movAvgSum = 0; // Sum for moving average calculation
 volatile double window[WINDOW_SIZE] = {0};
@@ -130,6 +119,10 @@ double periodTime = 0;
 double realPeriodTime = 0;
 double startPeriod = 0;
 double endPeriod = 0;
+
+double delay = 0;
+int delay_cnt = 0;
+BitField delay_flag;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -407,16 +400,17 @@ int32_t wrap_platform_write(uint8_t Address, uint8_t Reg, uint8_t *Bufp,
 	return 0;
 }
 
-int calculateDelay(int speed) {
+void Delay() {
 
-    int delayTime = 500 / (abs(speed)/100+1);  // Avoid division by zero by ensuring speed is never zero in the caller
-    return delayTime; // The delay decreases as the speed increases
+    delay = (realPeriodTime/2.0)/(9.0);
+    delay_flag.flag = TRUE;
+
+    while(delay_flag.flag){
+
+    }
 }
 
 void Display_char(uint16_t (*ASCII)[9], int32_t x){
-
-
-	HAL_Delay(50);
 
 
 	//if we move it to the right read the array from 0->9
@@ -424,7 +418,7 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 		for (int a = 0; a < 7; a++) {
 			for (int i = 0; i < 9; i++) {
 				CombineAndSendNEW(ASCII[a][i], red);
-				HAL_Delay(0.005);
+				HAL_Delay(calculateDelay());
 			}
 		}
 
@@ -436,8 +430,31 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 		for (int b = 0; b < 7; b++) {
 			for (int j = 8; j >= 0; j--) {
 				CombineAndSendNEW(ASCII[b][j], red);
-				HAL_Delay(0.005);
+				HAL_Delay(calculateDelay());
 			}
+		}
+
+		dir_change.flag ^= 1;
+	}
+}
+
+void Display(uint16_t ASCII[9], int32_t x) {
+
+	if (x > 100 && dir_change.flag == 1) {
+
+		for (int i = 0; i < 9; i++) {
+			CombineAndSendNEW(ASCII[i], red);
+			Delay();
+		}
+
+		dir_change.flag ^= 1;
+	}
+
+	else if (x < -200 && dir_change.flag == 0) {
+
+		for (int j = 8; j >= 0; j--) {
+			CombineAndSendNEW(ASCII[j], red);
+			Delay();
 		}
 
 		dir_change.flag ^= 1;
@@ -459,87 +476,34 @@ double centerVelocity(double newData) {
     return newData - currentMean;
 }
 
-//Center + moving average
-void process_sensor_data(Data *readBuffer) {
-
-	//For the first "WINDOW_SIZE" iterations old_value will be 0, then it will always be the
-	//oldest value, this way i can calculate a moving average dynamically
-	//Centering it before applying moving average
-	double centeredData = updateMeanAndCenterData(readBuffer[buffer_index].acc_axes_x);
-
-	//Pass old data, then override that index with new data
-    int old_value = window[window_index];
-    window[window_index] = centeredData;
-
-    // Update sum for moving average
-    movAvgSum -= old_value;
-    movAvgSum += centeredData;
-
-
-    if (num_data_in_window < WINDOW_SIZE) {
-		num_data_in_window++;  // Only needed for the first few iterations, after that it
-		//will become WINDOW_SIZE
-	}
-
-    // Move window index forward
-    window_index = (window_index + 1) % WINDOW_SIZE;
-
-    // Calculate moving average
-
-    double moving_average = movAvgSum / (double) num_data_in_window;
-
-    if (procBuffer_index >= BUFFER_SIZE) {
-		switchBuffers(&procWriteBuffer,&procReadBuffer,processedBuffer1,processedBuffer2); // Switch the buffers
-		procBuffer_index = 0; // Reset buffer index for new writing
-		isProcBufferSwitched.flag = TRUE; // Set the flag indicating buffer switch
-	}
-
-    //printf("Raw Data: %f, Moving Average: %f\n\r", centeredData, moving_average);
-    procWriteBuffer[procBuffer_index].acc_axes_x = moving_average;
-
-
-   // printf("%f", procWriteBuffer[procBuffer_index]);
-
-    procBuffer_index++;
-
-
-}
-
-void switchBuffers(Data** writeBuffer, Data** readBuffer, Data* buffer1, Data* buffer2) {
-    if (*writeBuffer == buffer1) {
-        *writeBuffer = buffer2;
-        *readBuffer = buffer1;
-    } else {
-        *writeBuffer = buffer1;
-        *readBuffer = buffer2;
-    }
-
-}
-
-
 
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == TIM2) {
 		LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);
 
-		// Check if buffer is ready to switch
-		if (buffer_index >= BUFFER_SIZE) {
-			switchBuffers(&writeBuffer,&readBuffer,buffer1,buffer2); // Switch the buffers
-			buffer_index = 0; // Reset buffer index for new writing
-			isBufferSwitched.flag = TRUE; // Set the flag indicating buffer switch
-		}
-
 		// Write data to the active buffer
-		writeBuffer[buffer_index].acc_axes_x = updateMeanAndCenterData((int) acc_axes.x);
-		writeBuffer[buffer_index].cnt = cnt;
-		buffer_index++;
+		Buffer[write_idx].acc_axes_x = updateMeanAndCenterData((int) acc_axes.x);
+		Buffer[write_idx].cnt = cnt;
+		write_idx = (write_idx + 1) % BUFFER_SIZE;
 		cnt++;
-
-
 
 		timer_flag.flag = TRUE;
 	}
+
+	//Delay:
+	if(delay_flag.flag){
+
+
+
+		if(delay_cnt >= delay){
+
+			delay_flag.flag = FALSE;
+		}
+
+		delay_cnt++;
+	}
+	delay_cnt=0;
 }
 
 void update_motion(double new_acceleration, double new_time, double delta_t) {
@@ -547,22 +511,14 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
     static int buffer_index = 0;
     static int samples_collected = 0;
 
-    // Constants
-    const double alpha = 0.3;  // Adjust alpha for testing different responsiveness
 
-    // Compute average acceleration
+    const double alpha = 1;  // Closer to 1-> faster, closer to 0-> smoother
+
+
     double average_acceleration = (last_acceleration + new_acceleration) / 2.0;
     current_velocity += average_acceleration * delta_t;
 
-    // Apply low-pass filter to smooth the velocity
-    if (samples_collected == 0) {
-        filtered_velocity = current_velocity;
-    } else {
-        filtered_velocity = alpha * current_velocity + (1 - alpha) * filtered_velocity;
-    }
-
-    // Store filtered velocity in the buffer
-    velocity_buffer[buffer_index] = filtered_velocity;
+    velocity_buffer[buffer_index] = current_velocity;
     buffer_index = (buffer_index + 1) % WINDOW_SIZE;
 
     // Update total sample count only until buffer is first filled
@@ -576,7 +532,7 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
     mean_velocity /= samples_collected;
 
     // Center the current velocity
-    centered_velocity = filtered_velocity - mean_velocity;
+    centered_velocity = current_velocity - mean_velocity;
 
     // Rest of the computation
     double average_velocity = (last_velocity + centered_velocity) / 2.0;
@@ -610,7 +566,7 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
 			realPeriodTime = periodTime;
 		}
 
-		printf("startPeriod: %f periodTime: %f\r\n",startPeriod, realPeriodTime);
+		//printf("startPeriod: %f periodTime: %f\r\n",startPeriod, realPeriodTime);
 	}
 
 }
@@ -627,9 +583,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	isBufferSwitched.flag = FALSE;
-	isProcBufferSwitched.flag = FALSE;
 	period.flag = FALSE;
+	delay_flag.flag = FALSE;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -700,33 +655,28 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+	while (1) {
 
-
-
-	  //Every 0.5ms write out the x axis value
+		//Every 0.5ms write out the x axis value
 		if (timer_flag.flag == TRUE) {
 
+			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
 
+			printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
+					centered_velocity, current_displacement,
+					Buffer[read_idx].cnt);
 
-			for (int i = 0; i < BUFFER_SIZE; i++) {
-
-
-				update_motion(readBuffer[i].acc_axes_x, readBuffer[i].cnt,1);
-				//printf("%f %f %f %d\r\n", readBuffer[i].acc_axes_x, centered_velocity, current_displacement, readBuffer[i].cnt);
-			}
-
+			read_idx = (read_idx + 1) % BUFFER_SIZE;
 
 			timer_flag.flag = FALSE;
 		}
 
-
+		//Display(A,acc_axes.x);
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -834,7 +784,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 1050-1;
+  htim2.Init.Prescaler = 8400-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 9;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
