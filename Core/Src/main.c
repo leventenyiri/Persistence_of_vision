@@ -84,12 +84,28 @@ typedef struct {
     int cnt;
 } Data;
 
+typedef struct {
+	double displacement;
+	int cnt;
+} Displacement;
+
 
 #define BUFFER_SIZE 3000
+#define DISP_BUFFER_SIZE 200
 #define WINDOW_SIZE 10
-volatile Data Buffer[BUFFER_SIZE];
+volatile Data Buffer[BUFFER_SIZE] = {0};
 volatile int read_idx = 0;
 volatile int write_idx = 0;
+BitField disp_usable;
+int disp_cnt = 0;
+double max_displacement = 0;
+double middle_point = 0;
+BitField first_send;
+
+double abs_velocity = 0;
+
+double k;
+int max_range_index = 8;
 
 volatile double movAvgSum = 0; // Sum for moving average calculation
 volatile double window[WINDOW_SIZE] = {0};
@@ -289,7 +305,7 @@ void CombineLEDData(uint8_t *result, uint8_t ledIdx) {
 
 void ShiftLEDData(uint8_t *result, uint8_t ledIdx) {
 
-	for (int j = 0; j < 6; j++) {   // Each LED configuration is 6 bytes
+	for (int j = 0; j < 6; j++) {
 		result[j] += LED_ARRAY[ledIdx][j];
 	}
 
@@ -438,28 +454,60 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 	}
 }
 
-void Display(uint16_t ASCII[9], int32_t x) {
+void Display(uint16_t ASCII[9]) {
 
-	if (x > 100 && dir_change.flag == 1) {
+		if (centered_velocity > 0) {
 
-		for (int i = 0; i < 9; i++) {
-			CombineAndSendNEW(ASCII[i], red);
-			Delay();
-		}
+		        k = (max_displacement / 2.0) / 9.0;
+		        int range_index = (int)(current_displacement / k);
 
-		dir_change.flag ^= 1;
-	}
+		        if(first_send.flag){
+		        	SendLEDData(LED_CLEAR);
+		        	SendLEDData(LED_CLEAR);
+		        	first_send.flag = FALSE;
+		        }
 
-	else if (x < -200 && dir_change.flag == 0) {
+		        // Ensure the index does not exceed the range
+		        if (range_index > max_range_index) {
+		            range_index = max_range_index;
+		        }
 
-		for (int j = 8; j >= 0; j--) {
-			CombineAndSendNEW(ASCII[j], red);
-			Delay();
-		}
+		        //printf("+range_index: %d, +current_displacement: %f", range_index, current_displacement);
 
-		dir_change.flag ^= 1;
-	}
+		        CombineAndSendNEW(ASCII[range_index], red);
+		        middle_point = current_displacement;
+		    }
+
+		first_send.flag = TRUE;
+
+
+		if (centered_velocity < 0) {
+		        k = (max_displacement / 2.0) / 9.0;
+		        int range_index = (int)((current_displacement-middle_point) / k);
+
+		        if (first_send.flag) {
+		        	SendLEDData(LED_CLEAR);
+		        	SendLEDData(LED_CLEAR);
+		        	first_send.flag = FALSE;
+		        }
+
+		        // Reverse the index
+		        range_index = max_range_index - range_index;
+
+
+
+		        // Ensure the index does not go below 0
+		        if (range_index < 0) {
+		            range_index = 0;
+		        }
+
+		       // printf("-range_index: %d, -current_displacement: %f", range_index, current_displacement);
+
+		        CombineAndSendNEW(ASCII[range_index], red);
+		    }
 }
+
+
 
 // Update mean and center data dynamically
 double updateMeanAndCenterData(double newData) {
@@ -542,8 +590,10 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
 
     // Additional computations
     double average_velocity = (last_velocity + centered_velocity) / 2.0;
-    double abs_velocity = (fabs(last_velocity) + fabs(centered_velocity)) / 2.0;
+    abs_velocity = (fabs(last_velocity) + fabs(centered_velocity)) / 2.0;
     current_displacement += abs_velocity * delta_t;
+
+
 
     // Check for zero crossings
     if ((last_velocity > 0 && centered_velocity < 0) || (last_velocity < 0 && centered_velocity > 0)) {
@@ -551,8 +601,10 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
     }
 
     if (zeroCrossing == 2) {
+    	max_displacement = current_displacement;
         current_displacement = 0;
         zeroCrossing = 0;
+        disp_usable.flag = TRUE;
     }
 
     // Update last values for next iteration
@@ -574,6 +626,8 @@ int main(void)
   /* USER CODE BEGIN 1 */
 	period.flag = FALSE;
 	delay_flag.flag = FALSE;
+	disp_usable.flag = FALSE;
+	first_send.flag = TRUE;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -651,16 +705,23 @@ int main(void)
 
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
 
-			printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
-					centered_velocity, current_displacement,
-					Buffer[read_idx].cnt);
+			//printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
+				//	centered_velocity, current_displacement,
+					//Buffer[read_idx].cnt);
 
 			read_idx = (read_idx + 1) % BUFFER_SIZE;
+
+
+			//for(int i=0;i<9;i++)
+			//CombineAndSendNEW(A[i],red);
+
 
 			timer_flag.flag = FALSE;
 		}
 
-		//Display(A,acc_axes.x);
+		if (disp_usable.flag) {
+			Display(A);
+		}
 
 		/* USER CODE END WHILE */
 
