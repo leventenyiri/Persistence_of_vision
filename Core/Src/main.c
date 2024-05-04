@@ -50,6 +50,7 @@
 SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim10;
 
 UART_HandleTypeDef huart2;
 
@@ -85,7 +86,7 @@ typedef struct {
 } Displacement;
 
 
-#define BUFFER_SIZE 3000
+#define BUFFER_SIZE 10
 #define DISP_BUFFER_SIZE 200
 #define WINDOW_SIZE 10
 volatile Data Buffer[BUFFER_SIZE] = {0};
@@ -138,6 +139,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 static void MEMS_Init(void);
 /* USER CODE END PFP */
@@ -411,7 +413,7 @@ int calculateDisplayIndex(double displacement, double middlePoint, uint8_t posit
     double k = (max_displacement / 2.0) / 45.0;
     int range_index;
 
-    if (positiveVelocity == TRUE) {
+    if (positiveVelocity == FALSE) {
         range_index = (int)(displacement / k);
     } else {
         range_index = (int)((displacement - middlePoint) / k); //The middlePoint needs to be
@@ -571,8 +573,19 @@ void update_motion(double new_acceleration, double new_time, double delta_t) {
     last_velocity = centered_velocity;
 
     read_idx = (read_idx + 1) % BUFFER_SIZE;
+
 }
 
+void Timer_Start() {
+    __HAL_TIM_SET_COUNTER(&htim10, 0);  // Reset counter to 0
+    HAL_TIM_Base_Start(&htim10);
+}
+
+// Stop the timer and read the value
+uint32_t Timer_Stop() {
+    HAL_TIM_Base_Stop(&htim10);
+    return __HAL_TIM_GET_COUNTER(&htim10);
+}
 
 /* USER CODE END 0 */
 
@@ -608,6 +621,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SPI2_Init();
   MX_TIM2_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
   OutputDisable();  // Disable outputs during initialization
   SendLEDData(LED_CLEAR);
@@ -630,13 +644,13 @@ int main(void)
 		for (int j = 0; j < 9; j++) {
 
 			if (i == 1)
-				ASCII_ARRAY[i][j] = E[j];
+				ASCII_ARRAY[i][j] = A[j];
 			if (i == 2)
-				ASCII_ARRAY[i][j] = R[j];
+				ASCII_ARRAY[i][j] = A[j];
 			if (i == 3)
-				ASCII_ARRAY[i][j] = I[j];
+				ASCII_ARRAY[i][j] = A[j];
 			if (i == 4)
-				ASCII_ARRAY[i][j] = K[j];
+				ASCII_ARRAY[i][j] = A[j];
 			if (i == 5)
 				ASCII_ARRAY[i][j] = A[j];
 			}
@@ -652,20 +666,23 @@ int main(void)
 
 		//Every 0.5ms write out the x axis value
 		if (timer_flag == TRUE) {
-
+			Timer_Start();
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
+			//Display(ASCII_ARRAY);
+			uint32_t elapsed_time = Timer_Stop();
+			float real_time = (float)elapsed_time / 84000000;  // Convert ticks to seconds
+			//printf("Elapsed time: %f sec.\r\n", real_time);
 
-			printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
-				centered_velocity, current_displacement,
-			Buffer[read_idx].cnt);
+		//	printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
+			//	centered_velocity, current_displacement,
+			//cnt);
 
 			if(zeroCrossing == 0){
 				CombineAndSendNEW(0xFFFF,red);
 			}
 			else{
-				CombineAndSendNEW(0x0,red);
+				SendLEDData(LED_CLEAR);
 			}
-
 
 			timer_flag = FALSE;
 		}
@@ -785,9 +802,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 8400-1;
+  htim2.Init.Prescaler = 20;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -808,6 +825,37 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 0;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 0xFFFF;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
 
 }
 
@@ -929,7 +977,7 @@ static void MEMS_Init(void)
   LSM6DSL_Init(&MotionSensor);
 
   /* Configure the LSM6DSL accelerometer (ODR, scale and interrupt) */
-  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 1660.0f); /* 1660 Hz */
+  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 3330.0f); /* 6660 Hz */
   LSM6DSL_ACC_SetFullScale(&MotionSensor, 8);          /* [-4000mg; +4000mg]  old*/
   LSM6DSL_ACC_Set_INT1_DRDY(&MotionSensor, ENABLE);    /* Enable DRDY */
   LSM6DSL_ACC_GetAxesRaw(&MotionSensor, &axes);        /* Clear DRDY */
