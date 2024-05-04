@@ -131,6 +131,10 @@ double filtered_velocity = 0;
 double delay = 0;
 int delay_cnt = 0;
 uint8_t delay_flag = FALSE;
+int range_index = 0;
+
+double start_point = 0.0;
+uint8_t last_direction = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -413,7 +417,7 @@ int calculateDisplayIndex(double displacement, double middlePoint, uint8_t posit
     double k = (max_displacement / 2.0) / 45.0;
     int range_index;
 
-    if (positiveVelocity == FALSE) {
+    if (positiveVelocity == TRUE) {
         range_index = (int)(displacement / k);
     } else {
         range_index = (int)((displacement - middlePoint) / k); //The middlePoint needs to be
@@ -430,8 +434,8 @@ int calculateDisplayIndex(double displacement, double middlePoint, uint8_t posit
 }
 
 void sendDisplayData(uint16_t (*ASCII)[9], int index) {
-    int disp_array_idx = index / 8;
-    int send_index = index % 8;
+    int disp_array_idx = index / 9;
+    int send_index = index % 9;
     CombineAndSendNEW(ASCII[disp_array_idx][send_index], red);
 }
 
@@ -448,7 +452,7 @@ void Display(uint16_t (*ASCII)[9]) {
     clearDisplayIfNeeded(&first_column);
 
     uint8_t isVelocityPositive = (centered_velocity > 0) ? TRUE : FALSE;
-    int range_index = calculateDisplayIndex(current_displacement, middle_point, isVelocityPositive);
+    range_index = calculateDisplayIndex(current_displacement, middle_point, isVelocityPositive);
 
     sendDisplayData(ASCII, range_index);
 
@@ -640,9 +644,11 @@ int main(void)
 
   uint16_t ASCII_ARRAY[5][9];
 
-	for (int i = 0; i < 7; i++) {
+	for (int i = 0; i < 5; i++) {
 		for (int j = 0; j < 9; j++) {
 
+			if (i == 0)
+				ASCII_ARRAY[i][j] = A[j];
 			if (i == 1)
 				ASCII_ARRAY[i][j] = A[j];
 			if (i == 2)
@@ -650,8 +656,6 @@ int main(void)
 			if (i == 3)
 				ASCII_ARRAY[i][j] = A[j];
 			if (i == 4)
-				ASCII_ARRAY[i][j] = A[j];
-			if (i == 5)
 				ASCII_ARRAY[i][j] = A[j];
 			}
 	}
@@ -668,22 +672,23 @@ int main(void)
 		if (timer_flag == TRUE) {
 			Timer_Start();
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
-			//Display(ASCII_ARRAY);
+			Display(ASCII_ARRAY);
 			uint32_t elapsed_time = Timer_Stop();
 			float real_time = (float)elapsed_time / 84000000;  // Convert ticks to seconds
 			//printf("Elapsed time: %f sec.\r\n", real_time);
+			printf("Range index: %d\r\n",range_index);
 
 		//	printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
 			//	centered_velocity, current_displacement,
 			//cnt);
-
+/*
 			if(zeroCrossing == 0){
 				CombineAndSendNEW(0xFFFF,red);
 			}
 			else{
 				SendLEDData(LED_CLEAR);
 			}
-
+*/
 			timer_flag = FALSE;
 		}
 
@@ -802,9 +807,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 20;
+  htim2.Init.Prescaler = 8400-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 999;
+  htim2.Init.Period = 9;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
