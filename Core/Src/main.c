@@ -100,12 +100,13 @@ BitField disp_usable;
 int disp_cnt = 0;
 double max_displacement = 0;
 double middle_point = 0;
-BitField first_send;
+BitField first_column;
 
 double abs_velocity = 0;
 
 double k;
-int max_range_index = 8;
+int max_range_index = 44;
+int disp_array_idx = 0;
 
 volatile double movAvgSum = 0; // Sum for moving average calculation
 volatile double window[WINDOW_SIZE] = {0};
@@ -454,11 +455,11 @@ void Display_char(uint16_t (*ASCII)[9], int32_t x){
 	}
 }
 
-void Display(uint16_t ASCII[9]) {
+void Display(uint16_t (*ASCII)[9]) {
 
 		if (centered_velocity > 0) {
 
-		        k = (max_displacement / 2.0) / 9.0;
+		        k = (max_displacement / 2.0) / 45.0;
 		        int range_index = (int)(current_displacement / k);
 
 		        if(first_send.flag){
@@ -474,15 +475,18 @@ void Display(uint16_t ASCII[9]) {
 
 		        //printf("+range_index: %d, +current_displacement: %f", range_index, current_displacement);
 
-		        CombineAndSendNEW(ASCII[range_index], red);
+		        disp_array_idx = range_index /8;
+		        int send_index = range_index % 8;
+
+		        CombineAndSendNEW(ASCII[disp_array_idx][send_index], red);
 		        middle_point = current_displacement;
 		    }
 
-		first_send.flag = TRUE;
+		first_column.flag = TRUE;
 
 
 		if (centered_velocity < 0) {
-		        k = (max_displacement / 2.0) / 9.0;
+		        k = (max_displacement / 2.0) / 45.0;
 		        int range_index = (int)((current_displacement-middle_point) / k);
 
 		        if (first_send.flag) {
@@ -503,8 +507,12 @@ void Display(uint16_t ASCII[9]) {
 
 		       // printf("-range_index: %d, -current_displacement: %f", range_index, current_displacement);
 
-		        CombineAndSendNEW(ASCII[range_index], red);
+		        disp_array_idx = (range_index / 8);
+		        int send_index = range_index % 8;
+
+		        CombineAndSendNEW(ASCII[disp_array_idx][send_index], red);
 		    }
+		first_column.flag = TRUE;
 }
 
 
@@ -627,7 +635,7 @@ int main(void)
 	period.flag = FALSE;
 	delay_flag.flag = FALSE;
 	disp_usable.flag = FALSE;
-	first_send.flag = TRUE;
+	first_column.flag = TRUE;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -670,13 +678,11 @@ int main(void)
   dir_change.flag =1; //using a flag to detect the change of direction
 
 
-  uint16_t ASCII_ARRAY[7][9];
+  uint16_t ASCII_ARRAY[5][9];
 
 	for (int i = 0; i < 7; i++) {
 		for (int j = 0; j < 9; j++) {
 
-			if (i == 0)
-				ASCII_ARRAY[i][j] = BLANK[j];
 			if (i == 1)
 				ASCII_ARRAY[i][j] = E[j];
 			if (i == 2)
@@ -687,9 +693,7 @@ int main(void)
 				ASCII_ARRAY[i][j] = K[j];
 			if (i == 5)
 				ASCII_ARRAY[i][j] = A[j];
-			if (i == 6)
-				ASCII_ARRAY[i][j] = BLANK[j];
-		}
+			}
 	}
 
 
@@ -706,8 +710,15 @@ int main(void)
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
 
 			//printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
-				//	centered_velocity, current_displacement,
-					//Buffer[read_idx].cnt);
+				//centered_velocity, current_displacement,
+			//Buffer[read_idx].cnt);
+
+			if(zeroCrossing == 0){
+				CombineAndSendNEW(0xFFFF,red);
+			}
+			else{
+				CombineAndSendNEW(0x0,red);
+			}
 
 			read_idx = (read_idx + 1) % BUFFER_SIZE;
 
@@ -719,15 +730,15 @@ int main(void)
 			timer_flag.flag = FALSE;
 		}
 
-		if (disp_usable.flag) {
-			Display(A);
+		if (disp_usable.flag || zeroCrossing == 0) {
+		//	Display(ASCII_ARRAY);
 		}
 
-		/* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
-		/* USER CODE BEGIN 3 */
+    /* USER CODE BEGIN 3 */
 	}
-	/* USER CODE END 3 */
+  /* USER CODE END 3 */
 }
 
 /**
@@ -978,7 +989,7 @@ static void MEMS_Init(void)
   LSM6DSL_Init(&MotionSensor);
 
   /* Configure the LSM6DSL accelerometer (ODR, scale and interrupt) */
-  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 3330.0f); /* 26 Hz */
+  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 1660.0f); /* 1660 Hz */
   LSM6DSL_ACC_SetFullScale(&MotionSensor, 8);          /* [-4000mg; +4000mg]  old*/
   LSM6DSL_ACC_Set_INT1_DRDY(&MotionSensor, ENABLE);    /* Enable DRDY */
   LSM6DSL_ACC_GetAxesRaw(&MotionSensor, &axes);        /* Clear DRDY */
