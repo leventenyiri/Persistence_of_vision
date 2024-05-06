@@ -87,7 +87,7 @@ typedef struct {
 } Displacement;
 
 
-#define BUFFER_SIZE 3000
+#define BUFFER_SIZE 1000
 #define DISP_BUFFER_SIZE 200
 #define WINDOW_SIZE 10
 volatile Data Buffer[BUFFER_SIZE] = {0};
@@ -293,14 +293,9 @@ void LatchEnable(void) {
 
 
 void SendLEDData(uint8_t *data) {
-	elapsed_time_start(1);
 	for (int i = 5; i >= 0; i--) {  // Loop through data array backward
 		HAL_SPI_Transmit(&hspi2, &data[i], 1, 100);  // Send 1 byte per driver
 	}
-	elapsed_time_stop(1);
-	elapsed_time_start(0);
-	//LatchEnable();  // Latch data once all have been transmitted
-	elapsed_time_stop(0);
 }
 
 void CombineLEDData(uint8_t *result, uint8_t ledIdx) {
@@ -431,7 +426,7 @@ void updateStartPoint(double new_start) {
 }
 
 int calculateDisplayIndex(double displacement) {
-    double k = max_displacement / 110.0; // Total range divided into 90 segments (55 each way)
+    double k = max_displacement / 154.0; // Total range divided into 90 segments (77 each way)
     int range_index;
 
     // Calculate relative displacement from the current start point
@@ -440,12 +435,12 @@ int calculateDisplayIndex(double displacement) {
     if (last_direction == 0) { // Forward motion
         range_index = (int)(relative_displacement / k);
     } else { // Backward motion
-        range_index = 55 - (int)(relative_displacement / k);  // Reverse index for backward motion
+        range_index = 77 - (int)(relative_displacement / k);  // Reverse index for backward motion
     }
 
     // Clamping the range index to allowed values
     if (range_index < 0) range_index = 0;
-    if (range_index > 55) range_index = 55;  // Clamp to max index for 45 segments
+    if (range_index > 77) range_index = 77;  // Clamp to max index for 45 segments
 
     return range_index;
 }
@@ -458,16 +453,6 @@ void sendDisplayData(uint16_t (*ASCII)[11], int index) {
 
 }
 
-void clearDisplayIfNeeded(uint8_t *flag) {
-    if (*flag == TRUE) {
-
-        SendLEDData(LED_CLEAR);
-        SendLEDData(LED_CLEAR);
-
-        *flag = FALSE;  // Reset the flag after clearing
-    }
-}
-
 void Display(uint16_t (*ASCII)[11]) {
     // Check and handle velocity zero crossing
 
@@ -477,21 +462,11 @@ void Display(uint16_t (*ASCII)[11]) {
         last_direction = current_direction;
     }
 
-    // Ensure the display is cleared if needed before any new updates
-
-    //clearDisplayIfNeeded(&first_column);
-
-
     // Calculate the index for display based on the updated start point and current displacement
     range_index = calculateDisplayIndex(current_displacement);
 
     // Send the character data corresponding to the calculated index to the display
-
     sendDisplayData(ASCII, range_index);
-
-
-    // Prepare for the next display update
-    first_column = TRUE;  // Ensure the flag is reset for the next cycle
 
 }
 
@@ -521,7 +496,7 @@ void updateBuffer(double acc_data, int index) {
 // Timer interrupt callback function
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM2) {
-
+    	elapsed_time_start(1);
     	LSM6DSL_Axes_t acc_axes;
         LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);  // Get new accelerometer data
 
@@ -530,7 +505,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
         // Set flag to indicate new data is available or some other processing needs to be done
         timer_flag = TRUE;
-
+        elapsed_time_stop(1);
     }
 }
 
@@ -696,20 +671,24 @@ int main(void)
 
 
 
-  uint16_t ASCII_ARRAY[5][11];
+  uint16_t ASCII_ARRAY[7][11];
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 7; i++) {
 		for (int j = 0; j < 11; j++) {
 
 			if (i == 0)
 				ASCII_ARRAY[i][j] = 0;
 			if (i == 1)
-				ASCII_ARRAY[i][j] = A[j];
+				ASCII_ARRAY[i][j] = E[j];
 			if (i == 2)
 				ASCII_ARRAY[i][j] = R[j];
 			if (i == 3)
-				ASCII_ARRAY[i][j] = E[j];
+				ASCII_ARRAY[i][j] = I[j];
 			if (i == 4)
+				ASCII_ARRAY[i][j] = K[j];
+			if (i == 5)
+				ASCII_ARRAY[i][j] = A[j];
+			if (i == 6)
 				ASCII_ARRAY[i][j] = 0;
 			}
 	}
@@ -722,43 +701,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 	while (1) {
 
-		//Every 0.5ms write out the x axis value
 
 		if (timer_flag == TRUE) {
-			//Timer_Start();
 
-			//printf("Elapsed time: %f sec.\r\n", real_time);
+			elapsed_time_start(0);
 
-
-			//overflow_check();
+			overflow_check();
 
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
 
-			//if (disp_usable) {
+			if (disp_usable) {
 				Display(ASCII_ARRAY);
-			//}
+			}
 
-
-			//printf("Write_cnt: %d, Read_cnt: %d\r\n",Buffer[write_idx-1].cnt, Buffer[read_idx-1].cnt);
-
-			//
-			//printf("Range index: %d\r\n",range_index);
 
 /*
 			printf("%f %f %f %d\r\n", Buffer[read_idx].acc_axes_x,
 				centered_velocity, current_displacement,
 			Buffer[read_idx].cnt); */
 
-/*
-			if(zeroCrossing == 0){
-				CombineAndSendNEW(0xFFFF,red);
-			}
-			else{
-				SendLEDData(LED_CLEAR);
-			}
-*/
 			timer_flag = FALSE;
-
+			elapsed_time_stop(0);
 		}
 
 
@@ -874,9 +837,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 8400-1;
+  htim2.Init.Prescaler = 20;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -1056,7 +1019,7 @@ static void MEMS_Init(void)
   LSM6DSL_Init(&MotionSensor);
 
   /* Configure the LSM6DSL accelerometer (ODR, scale and interrupt) */
-  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 3330.0f); /* 6660 Hz */
+  LSM6DSL_ACC_SetOutputDataRate(&MotionSensor, 1660.0f); /* 3330 Hz */
   LSM6DSL_ACC_SetFullScale(&MotionSensor, 8);          /* [-4000mg; +4000mg]  old*/
   LSM6DSL_ACC_Set_INT1_DRDY(&MotionSensor, ENABLE);    /* Enable DRDY */
   LSM6DSL_ACC_GetAxesRaw(&MotionSensor, &axes);        /* Clear DRDY */
