@@ -287,16 +287,20 @@ void OutputDisable(void) {
 
 void LatchEnable(void) {
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);   // Set PB1 high
-	HAL_Delay(1);  // Short delay to ensure the latch pulse is detected
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET); // Set PB1 low again
+	//HAL_Delay(1);  // Short delay to ensure the latch pulse is detected
+	//HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET); // Set PB1 low again
 }
 
 
 void SendLEDData(uint8_t *data) {
+	elapsed_time_start(1);
 	for (int i = 5; i >= 0; i--) {  // Loop through data array backward
 		HAL_SPI_Transmit(&hspi2, &data[i], 1, 100);  // Send 1 byte per driver
 	}
-	LatchEnable();  // Latch data once all have been transmitted
+	elapsed_time_stop(1);
+	elapsed_time_start(0);
+	//LatchEnable();  // Latch data once all have been transmitted
+	elapsed_time_stop(0);
 }
 
 void CombineLEDData(uint8_t *result, uint8_t ledIdx) {
@@ -316,6 +320,7 @@ void ShiftLEDData(uint8_t *result, uint8_t ledIdx) {
 }
 
 void CombineAndSendNEW(uint16_t ledMask,uint8_t color) {
+
 
 	//if the value of a variable is 1, concatenate that LED into the sum
 	char a = (ledMask & 0b1000000000000000) >> 15;
@@ -399,6 +404,7 @@ void CombineAndSendNEW(uint16_t ledMask,uint8_t color) {
 	}
 
 	SendLEDData(LED);
+
 }
 
 int32_t wrap_platform_read(uint8_t Address, uint8_t Reg, uint8_t *Bufp,
@@ -425,7 +431,7 @@ void updateStartPoint(double new_start) {
 }
 
 int calculateDisplayIndex(double displacement) {
-    double k = max_displacement / 54.0; // Total range divided into 54 segments (27 each way)
+    double k = max_displacement / 90.0; // Total range divided into 90 segments (45 each way)
     int range_index;
 
     // Calculate relative displacement from the current start point
@@ -434,12 +440,12 @@ int calculateDisplayIndex(double displacement) {
     if (last_direction == 0) { // Forward motion
         range_index = (int)(relative_displacement / k);
     } else { // Backward motion
-        range_index = 27 - (int)(relative_displacement / k);  // Reverse index for backward motion
+        range_index = 45 - (int)(relative_displacement / k);  // Reverse index for backward motion
     }
 
     // Clamping the range index to allowed values
     if (range_index < 0) range_index = 0;
-    if (range_index > 27) range_index = 27;  // Clamp to max index for 27 segments
+    if (range_index > 45) range_index = 45;  // Clamp to max index for 45 segments
 
     return range_index;
 }
@@ -447,19 +453,24 @@ int calculateDisplayIndex(double displacement) {
 void sendDisplayData(uint16_t (*ASCII)[9], int index) {
     int disp_array_idx = index / 9;
     int send_index = index % 9;
+
     CombineAndSendNEW(ASCII[disp_array_idx][send_index], red);
+
 }
 
 void clearDisplayIfNeeded(uint8_t *flag) {
     if (*flag == TRUE) {
+
         SendLEDData(LED_CLEAR);
         SendLEDData(LED_CLEAR);
+
         *flag = FALSE;  // Reset the flag after clearing
     }
 }
 
 void Display(uint16_t (*ASCII)[9]) {
     // Check and handle velocity zero crossing
+
     uint8_t current_direction = (centered_velocity > 0) ? 0 : 1;  // 0 for positive, 1 for negative
     if (current_direction != last_direction) {
         start_point = current_displacement;
@@ -467,16 +478,21 @@ void Display(uint16_t (*ASCII)[9]) {
     }
 
     // Ensure the display is cleared if needed before any new updates
-    clearDisplayIfNeeded(&first_column);
+
+    //clearDisplayIfNeeded(&first_column);
+
 
     // Calculate the index for display based on the updated start point and current displacement
     range_index = calculateDisplayIndex(current_displacement);
 
     // Send the character data corresponding to the calculated index to the display
+
     sendDisplayData(ASCII, range_index);
+
 
     // Prepare for the next display update
     first_column = TRUE;  // Ensure the flag is reset for the next cycle
+
 }
 
 
@@ -505,7 +521,7 @@ void updateBuffer(double acc_data, int index) {
 // Timer interrupt callback function
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM2) {
-    	elapsed_time_start(1);
+
     	LSM6DSL_Axes_t acc_axes;
         LSM6DSL_ACC_GetAxes(&MotionSensor, &acc_axes);  // Get new accelerometer data
 
@@ -514,7 +530,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 
         // Set flag to indicate new data is available or some other processing needs to be done
         timer_flag = TRUE;
-        elapsed_time_stop(1);
+
     }
 }
 
@@ -676,19 +692,25 @@ int main(void)
 
   HAL_TIM_Base_Start_IT(&htim2);
 
+  LatchEnable();
 
 
-  uint16_t ASCII_ARRAY[3][9];
 
-	for (int i = 0; i < 3; i++) {
+  uint16_t ASCII_ARRAY[5][9];
+
+	for (int i = 0; i < 5; i++) {
 		for (int j = 0; j < 9; j++) {
 
 			if (i == 0)
-				ASCII_ARRAY[i][j] = A[j];
+				ASCII_ARRAY[i][j] = 0;
 			if (i == 1)
-				ASCII_ARRAY[i][j] = R[j];
+				ASCII_ARRAY[i][j] = A[j];
 			if (i == 2)
+				ASCII_ARRAY[i][j] = R[j];
+			if (i == 3)
 				ASCII_ARRAY[i][j] = E[j];
+			if (i == 4)
+				ASCII_ARRAY[i][j] = 0;
 			}
 	}
 
@@ -707,16 +729,16 @@ int main(void)
 
 			//printf("Elapsed time: %f sec.\r\n", real_time);
 
-		    elapsed_time_start(0);
+
 			//overflow_check();
 
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
 
-			if (disp_usable) {
+			//if (disp_usable) {
 				Display(ASCII_ARRAY);
-			}
+			//}
 
-			elapsed_time_stop(0);
+
 			//printf("Write_cnt: %d, Read_cnt: %d\r\n",Buffer[write_idx-1].cnt, Buffer[read_idx-1].cnt);
 
 			//
@@ -978,12 +1000,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LED_LE_Pin LED_OE_Pin */
-  GPIO_InitStruct.Pin = LED_LE_Pin|LED_OE_Pin;
+  /*Configure GPIO pin : LED_LE_Pin */
+  GPIO_InitStruct.Pin = LED_LE_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(LED_LE_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LED_OE_Pin */
+  GPIO_InitStruct.Pin = LED_OE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(LED_OE_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LSM6DSL_INT1_EXTI11_Pin */
   GPIO_InitStruct.Pin = LSM6DSL_INT1_EXTI11_Pin;
