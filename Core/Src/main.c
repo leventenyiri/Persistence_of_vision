@@ -27,6 +27,8 @@
 #include "ASCII.h"
 #include <stdlib.h>
 #include <elapsed_time.h>
+#include <unistd.h>
+#include <errno.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,6 +41,10 @@
 
 #define red 5
 #define green 10
+#define MAX_INPUT_LENGTH 10
+#define BUFFER_SIZE 1000
+#define TRUE 1
+#define FALSE 0
 
 /* USER CODE END PD */
 
@@ -59,9 +65,6 @@ UART_HandleTypeDef huart2;
 LSM6DSL_Object_t MotionSensor;
 volatile uint32_t dataRdyIntReceived;
 
-#define TRUE 1
-#define FALSE 0
-
 volatile uint8_t timer_flag = FALSE;
 volatile LSM6DSL_Axes_t acc_axes;
 volatile int cnt = 0;
@@ -77,7 +80,6 @@ typedef struct {
 } Displacement;
 
 
-#define BUFFER_SIZE 1000
 volatile Data Buffer[BUFFER_SIZE] = {0};
 volatile int read_idx = 0;
 volatile int write_idx = 0;
@@ -115,6 +117,13 @@ const double VELOCITY_THRESHOLD = 10000.0;
 
 volatile int write_cnt = 0;
 volatile int read_cnt = 0;
+
+char user_input[MAX_INPUT_LENGTH];
+
+
+volatile uint8_t rx_data[100];
+volatile uint8_t rx_index;
+volatile uint8_t rx_buffer[2];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -392,8 +401,8 @@ int32_t wrap_platform_write(uint8_t Address, uint8_t Reg, uint8_t *Bufp,
 	return 0;
 }
 
-int calculateDisplayIndex(double displacement) {
-    double k = max_displacement / 154.0; // Total range divided into 90 segments (77 each way)
+int calculateDisplayIndex(double displacement, uint8_t length) {
+    double k = max_displacement / (2*11*length); // Total range divided into 154 segments (77 each way)
     int range_index;
 
     // Calculate relative displacement from the current start point
@@ -402,12 +411,12 @@ int calculateDisplayIndex(double displacement) {
     if (last_direction == 0) { // Forward motion
         range_index = (int)(relative_displacement / k);
     } else { // Backward motion
-        range_index = 77 - (int)(relative_displacement / k);  // Reverse index for backward motion
+        range_index = (11*length) - (int)(relative_displacement / k);  // Reverse index for backward motion
     }
 
     // Clamping the range index to allowed values
     if (range_index < 0) range_index = 0;
-    if (range_index > 77) range_index = 77;  // Clamp to max index for 45 segments
+    if (range_index > (11*length)) range_index = (11*length);  // Clamp to max index for 45 segments
 
     return range_index;
 }
@@ -420,7 +429,7 @@ void sendDisplayData(uint16_t (*ASCII)[11], int index) {
 
 }
 
-void Display(uint16_t (*ASCII)[11]) {
+void Display(uint16_t (*ASCII)[11], uint8_t length) {
     // Check and handle velocity zero crossing
 
     uint8_t current_direction = (centered_velocity > 0) ? 0 : 1;  // 0 for positive, 1 for negative
@@ -430,7 +439,7 @@ void Display(uint16_t (*ASCII)[11]) {
     }
 
     // Calculate the index for display based on the updated start point and current displacement
-    range_index = calculateDisplayIndex(current_displacement);
+    range_index = calculateDisplayIndex(current_displacement, length);
 
     // Send the character data corresponding to the calculated index to the display
     sendDisplayData(ASCII, range_index);
@@ -585,6 +594,136 @@ void overflow_check(){
 		CombineAndSendNEW(0xFFFF,red);
 	}
 }
+/*
+void fill_ASCII_ARRAY(char* input){
+
+
+	uint16_t *array[11] = {0};
+
+	for(int i=0; i<strlen(input);i++){
+		for(int j=0; j<11; j++){
+
+			switch(input[i]){
+						case 'A':
+							array[i][j] = A[j];
+							break;
+						case 'E':
+							array[i][j] = E[j];
+							break;
+						case 'I':
+							array[i][j] = I[j];
+							break;
+						case 'K':
+							array[i][j] = K[j];
+							break;
+						case 'R':
+							array[i][j] = R[j];
+							break;
+						}
+				}
+		}
+
+
+
+
+	for (int i = 0; i < strlen(input)+2; i++) {
+			for (int j = 0; j < 11; j++) {
+
+				if (i == 0)
+					ASCII_ARRAY[i][j] = 0;
+				if (i == 1)
+					ASCII_ARRAY[i][j] = array[i-1][j];
+				if (i == 2)
+					ASCII_ARRAY[i][j] = array[i-1][j];
+				if (i == 3)
+					ASCII_ARRAY[i][j] = array[i-1][j];
+				if (i == 4)
+					ASCII_ARRAY[i][j] = array[i-1][j];
+				if (i == 5)
+					ASCII_ARRAY[i][j] = array[i-1][j];
+				if (i == 6)
+					ASCII_ARRAY[i][j] = 0;
+				}
+		}
+
+
+}
+*/
+
+void fill_ASCII_ARRAY2(const char* input, uint16_t ***pASCII_ARRAY) {
+    int numChars = strlen(input);
+    if (numChars > MAX_INPUT_LENGTH) {
+        numChars = MAX_INPUT_LENGTH; // Enforce maximum length
+    }
+
+    // Correct pointer usage
+    uint16_t **ASCII_ARRAY = malloc((numChars + 2) * sizeof(uint16_t*)); // +2 for the first and last empty rows
+    if (ASCII_ARRAY == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return;
+    }
+
+    for (int i = 0; i < numChars + 2; i++) {
+        ASCII_ARRAY[i] = malloc(11 * sizeof(uint16_t));
+        if (ASCII_ARRAY[i] == NULL) {
+            fprintf(stderr, "Memory allocation failed for row %d\n", i);
+            for (int k = 0; k < i; k++) {
+                free(ASCII_ARRAY[k]);
+            }
+            free(ASCII_ARRAY);
+            return;
+        }
+        memset(ASCII_ARRAY[i], 0, 11 * sizeof(uint16_t)); // Initialize the row to zero
+    }
+
+    *pASCII_ARRAY = ASCII_ARRAY;  // Set the passed in pointer to the newly allocated memory
+
+    uint16_t* char_to_array[128] = {NULL};
+    char_to_array['E'] = E;
+    char_to_array['R'] = R;
+    char_to_array['I'] = I;
+    char_to_array['K'] = K;
+    char_to_array['A'] = A;
+
+    for (int i = 1; i <= numChars; i++) {
+        uint16_t* pattern = char_to_array[(unsigned char)input[i - 1]];
+        if (pattern) {
+            for (int j = 0; j < 11; j++) {
+                ASCII_ARRAY[i][j] = pattern[j];
+                //printf("ASCII_ARRAY[%d][%d] = %04x\r\n", i, j, ASCII_ARRAY[i][j]);
+            }
+            //printf("Inside Address of Row %d: %p\r\n", i, (void*)ASCII_ARRAY[i]);
+        }
+    }
+}
+
+int UART_Read_Line(UART_HandleTypeDef *huart, char **buffer) {
+    char tempBuffer[128]; // Temporary buffer to store incoming data
+    int idx = 0;
+    uint8_t data;
+    HAL_StatusTypeDef status;
+
+    while (1) {
+        status = HAL_UART_Receive(huart, &data, 1, HAL_MAX_DELAY);  // Blocking mode
+        if (status != HAL_OK) break;  // Break on error or no data
+
+        if (data == '\r' || data == '\n') break;  // Stop on enter key
+        if (idx < sizeof(tempBuffer) - 1) {
+            tempBuffer[idx++] = data;
+        }
+    }
+
+    tempBuffer[idx] = '\0';  // Null-terminate the string
+
+    // Allocate memory for the exact length of the received data
+    *buffer = malloc(idx + 1);
+    if (*buffer) {
+        strcpy(*buffer, tempBuffer);  // Copy the temporary buffer to the allocated buffer
+        return idx;  // Return the number of received characters
+    }
+
+    return 0;  // Return 0 if allocation failed or no data received
+}
 /* USER CODE END 0 */
 
 /**
@@ -632,30 +771,43 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim2);
 
   LatchEnable();
+/*
+  if (ASCII_ARRAY != NULL) {
+  	    for (int i = 0; i < strlen(input) + 2; i++) {  // Note: It's safer to track the actual allocated size separately
+  	        free(ASCII_ARRAY[i]);
+  	    } */
+  	//free(ASCII_ARRAY);
+  	//free(input);
+	uint16_t **ASCII_ARRAY = NULL;
+	char *input = NULL; // Buffer to hold user input
+	printf("Enter up to five characters (A, E, I, K, R): \r\n");
+	int received = UART_Read_Line(&huart2, &input);
+	//if (received > 0) {
+		//printf("Received: %s\r\n", input);
+	//}
+
+	//input[strcspn(input, "\n")] = 0; // Remove newline character if present
+
+	// Call function to fill array based on input
+	fill_ASCII_ARRAY2(input, &ASCII_ARRAY);
+
+	// Print the ASCII_ARRAY for verification
+	/*if (ASCII_ARRAY != NULL) {
+	    for (int i = 0; i < strlen(input) + 2; i++) {
+	        printf("Outside Address of Row %d: %p\r\n", i, (void*)ASCII_ARRAY[i]);
+	        for (int j = 0; j < 11; j++) {
+	            printf("ASCII_ARRAY[%d][%d] = %04x\r\n", i, j, ASCII_ARRAY[i][j]);
+	        }
+	    }
+	} */
+
+		// Free the dynamically allocated memory
+
+	      // Now free the array of pointers itself
 
 
-
-  uint16_t ASCII_ARRAY[7][11];
-
-	for (int i = 0; i < 7; i++) {
-		for (int j = 0; j < 11; j++) {
-
-			if (i == 0)
-				ASCII_ARRAY[i][j] = 0;
-			if (i == 1)
-				ASCII_ARRAY[i][j] = E[j];
-			if (i == 2)
-				ASCII_ARRAY[i][j] = R[j];
-			if (i == 3)
-				ASCII_ARRAY[i][j] = I[j];
-			if (i == 4)
-				ASCII_ARRAY[i][j] = K[j];
-			if (i == 5)
-				ASCII_ARRAY[i][j] = A[j];
-			if (i == 6)
-				ASCII_ARRAY[i][j] = 0;
-			}
-	}
+	write_idx=0;
+	read_idx=0;
 
 
 
@@ -675,7 +827,7 @@ int main(void)
 			update_motion(Buffer[read_idx].acc_axes_x, Buffer[read_idx].cnt,1);
 
 			if (disp_usable) {
-				Display(ASCII_ARRAY);
+				Display(ASCII_ARRAY, received);
 			}
 
 
@@ -1009,6 +1161,37 @@ int _write(int fd, char * ptr, int len)
   HAL_UART_Transmit(&huart2, (uint8_t *) ptr, len, HAL_MAX_DELAY);
   return len;
 }
+
+/*void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+ /* Prevent unused argument(s) compilation warning */
+ //UNUSED(huart);
+ /* NOTE: This function should not be modified, when the callback is needed,
+          the HAL_UART_RxCpltCallback could be implemented in the user file
+  */
+
+ //HAL_UART_Transmit(&huart2, rx_data, 1,10);
+//}
+
+int _read(int file, char *ptr, int len)
+{
+    if (file != STDIN_FILENO) {
+        errno = EBADF;
+        return -1;
+    }
+
+    HAL_StatusTypeDef status =
+        HAL_UART_Receive(&huart2, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart2, (uint8_t *) ptr, len, HAL_MAX_DELAY);
+
+    if (status == HAL_OK)
+        return len;
+    else {
+        errno = EIO;
+        return -1;
+    }
+}
+
 /* USER CODE END 4 */
 
 /**
