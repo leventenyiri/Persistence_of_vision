@@ -431,7 +431,7 @@ void updateStartPoint(double new_start) {
 }
 
 int calculateDisplayIndex(double displacement) {
-    double k = max_displacement / 90.0; // Total range divided into 90 segments (45 each way)
+    double k = max_displacement / 110.0; // Total range divided into 90 segments (55 each way)
     int range_index;
 
     // Calculate relative displacement from the current start point
@@ -440,19 +440,19 @@ int calculateDisplayIndex(double displacement) {
     if (last_direction == 0) { // Forward motion
         range_index = (int)(relative_displacement / k);
     } else { // Backward motion
-        range_index = 45 - (int)(relative_displacement / k);  // Reverse index for backward motion
+        range_index = 55 - (int)(relative_displacement / k);  // Reverse index for backward motion
     }
 
     // Clamping the range index to allowed values
     if (range_index < 0) range_index = 0;
-    if (range_index > 45) range_index = 45;  // Clamp to max index for 45 segments
+    if (range_index > 55) range_index = 55;  // Clamp to max index for 45 segments
 
     return range_index;
 }
 
-void sendDisplayData(uint16_t (*ASCII)[9], int index) {
-    int disp_array_idx = index / 9;
-    int send_index = index % 9;
+void sendDisplayData(uint16_t (*ASCII)[11], int index) {
+    int disp_array_idx = index / 11;
+    int send_index = index % 11;
 
     CombineAndSendNEW(ASCII[disp_array_idx][send_index], red);
 
@@ -468,7 +468,7 @@ void clearDisplayIfNeeded(uint8_t *flag) {
     }
 }
 
-void Display(uint16_t (*ASCII)[9]) {
+void Display(uint16_t (*ASCII)[11]) {
     // Check and handle velocity zero crossing
 
     uint8_t current_direction = (centered_velocity > 0) ? 0 : 1;  // 0 for positive, 1 for negative
@@ -696,10 +696,10 @@ int main(void)
 
 
 
-  uint16_t ASCII_ARRAY[5][9];
+  uint16_t ASCII_ARRAY[5][11];
 
 	for (int i = 0; i < 5; i++) {
-		for (int j = 0; j < 9; j++) {
+		for (int j = 0; j < 11; j++) {
 
 			if (i == 0)
 				ASCII_ARRAY[i][j] = 0;
