@@ -29,6 +29,7 @@ namespace Persistence_of_vision
         private Rectangle invalidateRect;
         private bool button;
         private SerialPort serialPort;
+        private int sendcnt = 0;
         //private Button sendButton = new Button();
         public MainForm()
         {
@@ -187,8 +188,9 @@ namespace Persistence_of_vision
                 {
                     byte[] buffer = BitConverter.GetBytes(data);
                     if (BitConverter.IsLittleEndian)
-                     //   Array.Reverse(buffer); // Ensure big-endian format if needed
+                        Array.Reverse(buffer); // Ensure big-endian format if needed
                     serialPort.Write(buffer, 0, buffer.Length); // Send the data
+                    sendcnt++;
                 }
             }
             //button = true;

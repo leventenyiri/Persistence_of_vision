@@ -59,7 +59,11 @@ volatile uint32_t dataRdyIntReceived;
 volatile uint8_t timer_flag = FALSE;
 volatile uint8_t rx_cnt = 0;
 volatile uint16_t tmp = 0;
-volatile uint16_t TEST_ARRAY[64];
+volatile uint16_t BUFFER_ARRAY1[64] = {0};
+volatile uint16_t BUFFER_ARRAY2[64] = {0};
+volatile uint16_t* read_ptr = BUFFER_ARRAY2;
+volatile uint16_t* write_ptr = BUFFER_ARRAY1;
+volatile uint8_t buffer_ready = FALSE;
 uint8_t disp_usable = FALSE;
 uint8_t first_positive_velocity_detected = FALSE;
 
@@ -292,6 +296,7 @@ int main(void)
 			0x2080, 0x1FFF, 0x0,0x0, 0x0, 0x0, 0x0, 0x0,0x0, 0x0, 0x0, 0x0, 0x0, 0x0,0x0, 0x0, 0x0, 0x0, 0x0,0x0, 0x0, 0x0, 0x0};
 
 
+  //uint16_t* read_ptr = null;
 
   /* USER CODE END 2 */
 
@@ -300,6 +305,25 @@ int main(void)
   HAL_UART_RegisterCallback(&huart2, HAL_UART_RX_COMPLETE_CB_ID, UART_Callback);
   HAL_UART_Receive_IT(&huart2,rx_buffer,1);
 	while (1) {
+
+		if(buffer_ready)
+		{
+			if(read_ptr == BUFFER_ARRAY2)
+			{
+				//memset(BUFFER_ARRAY2, 0, sizeof(BUFFER_ARRAY2));
+				read_ptr = BUFFER_ARRAY1;
+				write_ptr = BUFFER_ARRAY2;
+			}
+
+			else if(read_ptr == BUFFER_ARRAY1){
+				//memset(BUFFER_ARRAY1, 0, sizeof(BUFFER_ARRAY2));
+				read_ptr = BUFFER_ARRAY2;
+				write_ptr = BUFFER_ARRAY1;
+			}
+
+
+			buffer_ready = FALSE;
+		}
 
 
 		if (timer_flag == TRUE) {
@@ -311,8 +335,8 @@ int main(void)
 
 			acc_cnt++;
 
-			if (disp_usable) {
-				Display(TEST_ARRAY, max_displacement, centered_velocity, current_displacement,&start_point);
+			if (disp_usable || read_ptr != NULL) {
+				Display(read_ptr, max_displacement, centered_velocity, current_displacement,&start_point);
 			}
 
 
@@ -440,23 +464,29 @@ int _write(int fd, char * ptr, int len)
 
 void UART_Callback(UART_HandleTypeDef *huart)
 {
-	HAL_UART_Transmit(&huart2,rx_buffer,1,300);
+	//HAL_UART_Transmit(&huart2,rx_buffer,1,300);
 	HAL_UART_Receive_IT(&huart2,rx_buffer,1);
-
-
 
 
 	if(rx_cnt % 2 == 1)
 	{
 		tmp = tmp <<8;
 		tmp |= rx_buffer[0];
-		TEST_ARRAY[(rx_cnt/2)] = tmp;
+		write_ptr[(rx_cnt/2)] = tmp;
 		tmp = 0;
 	}
 
+	//if(rx_cnt<=128)
 	rx_cnt++;
 
 	tmp = rx_buffer[0];
+
+	if(rx_cnt == 128)
+	{
+		buffer_ready = TRUE;
+		rx_cnt = 0;
+		tmp = 0;
+	}
 }
 /* USER CODE END 4 */
 
